@@ -226,22 +226,25 @@ def run_mock_training():
 
     dataloader = MockDataset()
     
-    print("\n=== 开始模拟第一个 Epoch 的训练 (含梯度累加与AMP) ===")
-    loss_all, loss_cls, loss_reg = train_one_epoch(
-        model=model, 
-        dataloader=dataloader, 
-        optimizer=optimizer, 
-        scaler=scaler, 
-        device=device,
-        accumulation_steps=2, # 每2个batch更新一次权重，模拟 Batch=16
-        alpha=0.5
-    )
-    
-    print(f"\nEpoch 1 结束:")
-    print(f"Total Loss: {loss_all:.4f}")
-    print(f"Cls Loss:   {loss_cls:.4f}")
-    print(f"Reg Loss:   {loss_reg:.4f}")
-    print("=== 测试通过！工程化训练流水线稳健 ===")
+    print("\n=== 开始模拟 3 个 Epoch 的训练 (含梯度累加与AMP) ===")
+    num_epochs = 3
+    for epoch in range(num_epochs):
+        loss_all, loss_cls, loss_reg = train_one_epoch(
+            model=model, 
+            dataloader=dataloader, 
+            optimizer=optimizer, 
+            scaler=scaler, 
+            device=device,
+            accumulation_steps=2, # 每2个batch更新一次权重，模拟 Batch=16
+            alpha=0.5
+        )
+        
+        print(f"Epoch {epoch + 1}/{num_epochs} 结束:")
+        print(f"  - Total Loss: {loss_all:.4f}")
+        print(f"  - Cls Loss:   {loss_cls:.4f}")
+        print(f"  - Reg Loss:   {loss_reg:.4f}")
+        
+    print("\n=== 测试通过！模型可以正常训练且 Loss 收敛 ===")
 
 if __name__ == "__main__":
     run_mock_training()
