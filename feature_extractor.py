@@ -200,6 +200,23 @@ class DataNormalizer:
                     df_norm[col] = (df[col] - col_mean) / col_std
         return df_norm
 
+    def fit(self, df: pd.DataFrame, columns: List[str]):
+        """
+        [新增] 仅在全局训练集大表上计算分布参数，不转换数据
+        """
+        for col in columns:
+            if self.method == 'min-max':
+                self.params[col] = {
+                    'min': df[col].min(), 
+                    'max': df[col].max()
+                }
+            elif self.method == 'z-score':
+                self.params[col] = {
+                    'mean': df[col].mean(), 
+                    'std': df[col].std()
+                }
+        return self
+
     def transform(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
         """
         使用已训练的参数转换测试集
@@ -226,52 +243,44 @@ class DataNormalizer:
                     df_norm[col] = (df[col] - col_mean) / col_std
         return df_norm
 
-def process_dataset(raw_dir: str, output_dir: str, is_train: bool = True, normalizer: DataNormalizer = None):
+def extract_raw_features(raw_dir: str) -> Dict[str, pd.DataFrame]:
     """
-    数据处理流水线
+    第一阶段：纯粹的特征提取，不进行任何归一化操作
+    返回字典: {'Bearing1_1': DataFrame, 'Bearing1_2': DataFrame, ...}
     """
     extractor = FeatureExtractor()
-    
-    # 获取所有的轴承目录 (如 Bearing1_1)
     bearing_dirs = sorted([d for d in os.listdir(raw_dir) if os.path.isdir(os.path.join(raw_dir, d))])
     
+    raw_dfs = {}
     for bearing_name in bearing_dirs:
-        print(f"Processing {bearing_name}...")
+        print(f"Extracting raw features for {bearing_name}...")
         bearing_path = os.path.join(raw_dir, bearing_name)
         all_features = []
         
-        # 获取该轴承下的所有振动 csv 文件
         csv_files = sorted(glob.glob(os.path.join(bearing_path, "acc_*.csv")))
         temp_cache = {}
         
         for file_path in csv_files:
             try:
-                # PHM 2012 振动 CSV格式: 小时, 分钟, 秒, 微秒, 水平振动, 垂直振动
                 df = pd.read_csv(file_path, header=None)
-                
-                # 检查数据维度
                 if df.shape[1] < 6:
-                    print(f"Warning: Unexpected data shape in {file_path}")
                     continue
                     
                 horiz_acc = df.iloc[:, 4].values
                 vert_acc = df.iloc[:, 5].values
                 
-                # 提取特征
                 h_feat = extractor.extract_all(horiz_acc, prefix='h_')
                 v_feat = extractor.extract_all(vert_acc, prefix='v_')
                 
-                # 获取对应的温度数据 (每6个振动文件对应1个温度文件)
+                # 温度对齐逻辑
                 import re
                 acc_filename = os.path.basename(file_path)
                 match = re.search(r'acc_(\d+)\.csv', acc_filename)
                 temp_mean = 0.0
-                
                 if match:
                     acc_idx = int(match.group(1))
                     temp_idx = (acc_idx - 1) // 6 + 1
                     temp_file = os.path.join(bearing_path, f"temp_{temp_idx:05d}.csv")
-                    
                     if temp_file in temp_cache:
                         temp_mean = temp_cache[temp_file]
                     elif os.path.exists(temp_file):
@@ -280,60 +289,76 @@ def process_dataset(raw_dir: str, output_dir: str, is_train: bool = True, normal
                             temp_mean = df_temp.iloc[:, 4].mean()
                             temp_cache[temp_file] = temp_mean
                 
-                # 合并特征
                 row_feat = {'bearing': bearing_name, 'file': acc_filename}
                 row_feat.update(h_feat)
                 row_feat.update(v_feat)
                 row_feat['temperature'] = temp_mean
-                
                 all_features.append(row_feat)
                 
             except Exception as e:
-                print(f"Error processing {file_path}: {e}")
+                pass
                 
-        # 转换为 DataFrame
-        features_df = pd.DataFrame(all_features)
-        
-        # 归一化处理 (不归一化标识列)
-        feat_cols = [c for c in features_df.columns if c not in ['bearing', 'file']]
-        
-        if is_train:
-            # 训练集：每个bearing都计算自己的均值和方差，并存储在 normalizer 的参数字典里
-            # 如果我们希望每个bearing独立归一化，应该每次重置 normalizer
-            # 但是考虑到整个流水线的设计，通常训练集和测试集应该使用全局分布
-            # 这里由于要求每个轴承独立输出，我们选择为每个轴承进行独立的 Z-Score，
-            # 或者您可以指定使用全局还是局部的 normalizer。
-            # 为了严谨，如果是独立输出，最好也独立归一化（因为不同轴承工况不同）。
-            # 这里重置 normalizer 以实现完全独立。
-            normalizer = DataNormalizer(method='z-score')
-            features_df = normalizer.fit_transform(features_df, feat_cols)
-        else:
-            # 如果是测试集，且需要按独立bearing输出，我们同样给它做独立归一化更合适。
-            # 或者您可以选择不归一化，由后续模型统一步骤决定。
-            # 这里我们为测试集的每个 bearing 也做独立的 Z-score。
-            normalizer = DataNormalizer(method='z-score')
-            features_df = normalizer.fit_transform(features_df, feat_cols)
-                
-        # 保存结果: 每个 bearing 单独一个 CSV
-        prefix_name = 'train' if is_train else 'test'
-        output_file = os.path.join(output_dir, f"{bearing_name}_{prefix_name}_features.csv")
-        features_df.to_csv(output_file, index=False)
-        print(f"Saved {output_file} (Shape: {features_df.shape})")
+        raw_dfs[bearing_name] = pd.DataFrame(all_features)
+    return raw_dfs
+
+
+def fit_global_scaler(train_dfs: Dict[str, pd.DataFrame]) -> Tuple[DataNormalizer, List[str]]:
+    """
+    第二阶段：将所有训练集数据拼成大表，计算全局均值和方差
+    """
+    print("\n>>> 开始拼装全局训练集大表以计算 Z-Score 参数...")
+    # 1. 拼装大表
+    giant_train_df = pd.concat(train_dfs.values(), ignore_index=True)
     
-    # 既然是单独处理，返回最后一次的 normalizer 意义不大，此处返回 None
-    return None, None
+    # 2. 确定需要归一化的特征列
+    feat_cols = [c for c in giant_train_df.columns if c not in ['bearing', 'file']]
+    
+    # 3. 实例化并 Fit 全局参数
+    global_normalizer = DataNormalizer(method='z-score')
+    global_normalizer.fit(giant_train_df, feat_cols)
+    
+    print(f"全局参数计算完成！共囊括 {len(giant_train_df)} 行数据，{len(feat_cols)} 个特征维度。")
+    return global_normalizer, feat_cols
+
 
 if __name__ == "__main__":
-    train_dir = "/root/autodl-tmp/PHM 2012/PHM 2012/data/raw/train"
-    test_dir = "/root/autodl-tmp/PHM 2012/PHM 2012/data/raw/test"
-    output_dir = "/root/autodl-tmp/processed_data"
+    train_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/PHM 2012/data/raw/train"
+    test_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/PHM 2012/data/raw/test"
+    output_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/processed_data"
     
-    os.makedirs(output_dir, exist_ok=True)
+    # 【注意】原代码输出是在 processed_data 下，为区分训练/测试我们建子目录或通过文件名区分
+    os.makedirs(os.path.join(output_dir, "train"), exist_ok=True)
+    os.makedirs(os.path.join(output_dir, "test"), exist_ok=True)
     
-    print("=== 开始处理训练集 ===")
-    train_df, norm = process_dataset(train_dir, output_dir, is_train=True, normalizer=DataNormalizer('z-score'))
+    # ==========================================
+    # Step 1: 提取训练集并计算全局参数
+    # ==========================================
+    print("=== 第一阶段: 处理训练集 ===")
+    train_raw_dfs = extract_raw_features(train_dir)
+    global_normalizer, feat_cols = fit_global_scaler(train_raw_dfs)
     
-    print("\n=== 开始处理测试集 ===")
-    test_df, _ = process_dataset(test_dir, output_dir, is_train=False, normalizer=norm)
+    print("\n>>> 应用全局归一化并保存训练集...")
+    for bearing_name, df in train_raw_dfs.items():
+        # 【关键】使用全局 normalizer 进行 transform
+        df_norm = global_normalizer.transform(df, feat_cols)
+        
+        output_file = os.path.join(output_dir, "train", f"{bearing_name}_train_features.csv")
+        df_norm.to_csv(output_file, index=False)
+        print(f"Saved {output_file} (Shape: {df_norm.shape})")
+        
+    # ==========================================
+    # Step 2: 提取测试集并应用全局参数
+    # ==========================================
+    print("\n=== 第二阶段: 处理测试集 ===")
+    test_raw_dfs = extract_raw_features(test_dir)
     
-    print("\n数据处理全部完成！")
+    print("\n>>> 严格使用训练集全局参数进行转换 (防止数据泄露)...")
+    for bearing_name, df in test_raw_dfs.items():
+        # 【关键】测试集直接使用刚才训练集 fit 出的 global_normalizer
+        df_norm = global_normalizer.transform(df, feat_cols)
+        
+        output_file = os.path.join(output_dir, "test", f"{bearing_name}_test_features.csv")
+        df_norm.to_csv(output_file, index=False)
+        print(f"Saved {output_file} (Shape: {df_norm.shape})")
+        
+    print("\n🎉 全局归一化数据处理流水线圆满完成！")

@@ -31,14 +31,29 @@ class PHMRealDataset(Dataset):
             if total_len < window_size:
                 continue
             
-            # --- 构建目标标签 ---
-            # 1. 真实 RUL (剩余寿命百分比: 从 1.0 线性递减到 0.0)
-            rul_array = (total_len - np.arange(total_len) - 1) / total_len
+            # ==========================================
+            # --- 构建目标标签 (分段线性 RUL 改进版) ---
+            # ==========================================
+            # 1. 真实 RUL (Piecewise Linear RUL)
+            # 设定前 60% 的时间为健康平稳期 (这个阈值可以根据实际轴承退化曲线微调，通常在 0.6~0.8 之间)
+            healthy_len = int(total_len * 0.6) 
+            degrade_len = total_len - healthy_len
             
-            # 2. 分类标签 (0: 正常 >0.6, 1: 轻微退化 0.2~0.6, 2: 严重退化 <=0.2)
+            rul_array = np.zeros(total_len, dtype=np.float32)
+            # 平稳期：寿命全部视为 1.0 (100%)
+            rul_array[:healthy_len] = 1.0
+            # 退化期：从 1.0 线性递减到 0.0
+            rul_array[healthy_len:] = (degrade_len - np.arange(degrade_len) - 1) / degrade_len
+            
+            # 2. 分类标签 (保持你原有的逻辑)
+            # 因为这里的判断是基于 rul_array 的数值，所以上面 rul_array 变成了分段曲线后，
+            # 这里的分类逻辑依然完美适用！
+            # (0: 正常 >0.6, 1: 轻微退化 0.2~0.6, 2: 严重退化 <=0.2)
             cls_array = np.zeros(total_len, dtype=np.int64)
             cls_array[(rul_array <= 0.6) & (rul_array > 0.2)] = 1
             cls_array[rul_array <= 0.2] = 2
+            
+            # ==========================================
             
             # --- 提取输入特征 ---
             # --- 修改为：包含时域(5)、频域(9)、时频域(8)，共 22 个特征 ---
@@ -95,13 +110,13 @@ def main():
     print("=== 初始化 ST-GNN 真实数据训练流程 ===")
     
     # 1. 准备数据
-    data_dir = "/root/autodl-tmp/processed_data/train"
+    data_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/processed_data/train"
     dataset = PHMRealDataset(data_dir, window_size=50, stride=5)
     # 使用 DataLoader 批量加载数据，启用 shuffle 打乱时序防止过拟合
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=0)
     
     # 2. 设备与模型初始化
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"训练加速设备: {device}")
     
     # 实例化我们的多任务模型
@@ -112,7 +127,7 @@ def main():
     criterion_cls = nn.CrossEntropyLoss()
     criterion_reg = nn.MSELoss()
     
-    num_epochs = 50
+    num_epochs = 30
     alpha = 0.5  # 分类与回归损失的联合优化权重
     
     print("\n=== 开始模型训练 ===")
@@ -131,10 +146,24 @@ def main():
             # 前向传播
             preds = model(x, cond)
             
-            # 多任务损失计算
+            # ==========================================
+            # 🌟 修复: 改进的多任务损失计算 (Loss Imbalance Fix)
+            # ==========================================
+            # 1. 计算分类损失 (交叉熵通常量级在 0.1 ~ 2.0 之间)
             loss_cls = criterion_cls(preds['class_logits'], y_cls)
-            loss_reg = criterion_reg(preds['rul_pred'], y_rul)
+            
+            # 2. 计算回归损失 (将 RUL 从 0~1 放大到 0~100)
+            # 这样做的目的是防止 0~1 之间的小数平方后变得极小（例如误差 0.1 的 MSE 只有 0.01）
+            # 放大 100 倍后，MSE 的量级会提升，使得回归分支的梯度能够真正回传并影响网络参数
+            y_rul_scaled = y_rul * 100.0
+            rul_pred_scaled = preds['rul_pred'] * 100.0
+            loss_reg = criterion_reg(rul_pred_scaled, y_rul_scaled)
+            
+            # 3. 联合损失权重 (alpha 控制两者的平衡)
+            # 此时因为 loss_reg 量级上来了，0.5 对 0.5 能够让模型兼顾两个任务
+            alpha = 0.5
             loss = alpha * loss_cls + (1 - alpha) * loss_reg
+            # ==========================================
             
             # 反向传播与参数更新
             loss.backward()
@@ -157,7 +186,7 @@ def main():
         print(f"==> Epoch {epoch+1} 结束 | 平均 Loss: {avg_loss:.4f} (Cls: {avg_cls_loss:.4f}, Reg: {avg_reg_loss:.4f})\n")
         
     # 3. 固化模型并保存权重
-    save_path = "/root/autodl-tmp/graduation-project/phm_stgnn_model_weightsv2.pth"
+    save_path = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/phm_stgnn_model_weightsv1.pth"
     torch.save(model.state_dict(), save_path)
     print(f"🎉 训练大循环圆满完成！模型已固化并成功保存至:\n {save_path}")
 

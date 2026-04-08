@@ -100,7 +100,7 @@ def test_dynamic_graph_with_data():
     print("=== 开始测试动态自适应图构建器 ===")
     
     # 1. 模拟设备选择
-    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"使用计算设备: {device}")
     
     # 2. 假设我们提取了 WPT 的 8 个频带作为特征通道 (N=8)
@@ -131,7 +131,7 @@ def test_dynamic_graph_with_data():
     print(f"边索引数据类型: {edge_index.dtype}")
     
     # 6. 读取真实数据验证维度逻辑
-    data_dir = "/root/autodl-tmp/processed_data/train"
+    data_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/processed_data/test"
     if os.path.exists(data_dir):
         csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
         if csv_files:

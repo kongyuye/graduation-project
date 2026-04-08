@@ -6,7 +6,7 @@ import torch
 import sys
 
 # 添加当前目录到系统路径，以确保能正确导入模型文件
-sys.path.append("/root/autodl-tmp/graduation-project")
+sys.path.append("/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/graduation-project")
 from train_pipeline import PHM_STGNN_Model
 
 # ---------------------------------------------------------
@@ -38,7 +38,7 @@ def predict_test_set():
     # ---------------------------------------------------------
     model = PHM_STGNN_Model(num_nodes=22, c_in=1, d_model=256, cond_dim=2, num_classes=3).to(device)
     
-    model_path = "/root/autodl-tmp/graduation-project/phm_stgnn_model_weightsv2.pth"
+    model_path = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/phm_stgnn_model_weightsv1.pth"
     if not os.path.exists(model_path):
         print(f"[!] Error: 模型权重文件不存在 {model_path}")
         return
@@ -50,7 +50,7 @@ def predict_test_set():
     # ---------------------------------------------------------
     # 3. 读取测试集特征数据
     # ---------------------------------------------------------
-    test_data_dir = "/root/autodl-tmp/processed_data/test"
+    test_data_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/processed_data/test"
     csv_files = glob.glob(os.path.join(test_data_dir, "*_test_features.csv"))
     print(f"[*] 找到 {len(csv_files)} 个测试集特征文件。")
     
@@ -142,7 +142,7 @@ def predict_test_set():
     df_results = pd.DataFrame(results)
     print(df_results.to_string(index=False))
     
-    output_csv = "/root/autodl-tmp/graduation-project/test_predictions.csv"
+    output_csv = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/graduation-project/test_predictions.csv"
     df_results.to_csv(output_csv, index=False)
     print(f"\n[*] 所有测试集预测结果已成功保存至: {output_csv}")
 
