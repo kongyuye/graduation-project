@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from einops import rearrange
-from torch_geometric.nn import DenseGATConv
 
 # ==========================================
 # 子模块 1: 局部特征提取层 (Temporal 1D-CNN)
@@ -28,23 +26,18 @@ class TemporalCNN(nn.Module):
         :param x: 初始输入特征, Shape: [B, T, N, C_in]
         :return: CNN 提取后的特征, Shape: [B, T, N, C_cnn]
         """
-        # --- Shape Transition ---
-        # 1. 初始输入: [B, T, N, C_in]
-        # 2. 融合 B 和 N 以适应 1D-CNN (要求输入为 [Batch, Channels, Length])
-        # 使用 einops.rearrange 优雅且安全地重构维度
-        # Shape 变为: [B*N, C_in, T]
-        x_cnn = rearrange(x, 'b t n c -> (b n) c t')
+        # Shape: [B, T, N, C_in] -> [B*N, C_in, T]
+        B, T, N, C_in = x.shape
+        x_cnn = x.permute(0, 2, 3, 1).contiguous().view(B * N, C_in, T)
         
         # 3. 通过 1D 卷积层
         # Shape 变为: [B*N, C_cnn, T]
         x_cnn = self.conv1d(x_cnn)
         x_cnn = self.activation(x_cnn)
         
-        # 4. 恢复为四维张量
-        # 获取原始的 B 和 N 维度信息用于重构
-        B, T, N, _ = x.shape
-        # Shape 变为: [B, T, N, C_cnn]
-        out = rearrange(x_cnn, '(b n) c t -> b t n c', b=B, n=N)
+        # Shape: [B*N, C_cnn, T] -> [B, T, N, C_cnn]
+        C_cnn = x_cnn.shape[1]
+        out = x_cnn.view(B, N, C_cnn, T).permute(0, 3, 1, 2).contiguous()
         
         return out
 
@@ -55,17 +48,10 @@ class TemporalCNN(nn.Module):
 class SpatialDenseGAT(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, heads: int = 4):
         """
-        基于 DenseGATConv 的空间图注意力聚合
+        基于稠密邻接矩阵的空间聚合层
         """
         super(SpatialDenseGAT, self).__init__()
-        # 使用 PyG 提供的 DenseGATConv 处理稠密邻接矩阵
-        # concat=False 意味着多头注意力结果会求平均而不是拼接，从而保持输出通道数为 out_channels
-        self.gat = DenseGATConv(
-            in_channels=in_channels, 
-            out_channels=out_channels, 
-            heads=heads, 
-            concat=False
-        )
+        self.proj = nn.Linear(in_channels, out_channels, bias=False)
         self.activation = nn.ReLU()
 
     def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
@@ -76,11 +62,8 @@ class SpatialDenseGAT(nn.Module):
         """
         B, T, N, C = x.shape
         
-        # --- Shape Transition ---
-        # 1. DenseGATConv 期望的特征输入 Shape 为 [Batch, Max_Nodes, Features]
-        # 由于我们有时间维度 T，我们需要将 B 和 T 融合作为逻辑上的 "Batch"
-        # Shape 变为: [B*T, N, C_cnn]
-        x_flat = rearrange(x, 'b t n c -> (b t) n c')
+        # Shape: [B, T, N, C] -> [B*T, N, C]
+        x_flat = x.contiguous().view(B * T, N, C)
         
         # 2. 邻接矩阵广播 (Broadcasting)
         # 如果 adj 是全局共享的 [N, N]，需要扩展为 [B*T, N, N]
@@ -91,20 +74,20 @@ class SpatialDenseGAT(nn.Module):
         elif adj.dim() == 3:
             # 沿着时间轴 T 复制邻接矩阵
             # [B, N, N] -> [B, 1, N, N] -> [B, T, N, N] -> [B*T, N, N]
-            adj_batched = adj.unsqueeze(1).expand(B, T, N, N)
-            adj_batched = rearrange(adj_batched, 'b t n1 n2 -> (b t) n1 n2')
+            adj_batched = adj.unsqueeze(1).expand(B, T, N, N).contiguous().view(B * T, N, N)
         else:
             raise ValueError(f"邻接矩阵维度异常，期望 2 或 3，实际为 {adj.dim()}")
 
-        # 3. 通过 Dense GAT 层
-        # mask=None 表示所有节点都是真实的（没有 padding 节点）
-        # Shape 变为: [B*T, N, d_gcn]
-        out_flat = self.gat(x_flat, adj_batched, mask=None)
+        # 3. 线性投影 + 邻接矩阵加权聚合
+        # x_proj: [B*T, N, out_channels]
+        x_proj = self.proj(x_flat)
+        # out_flat: [B*T, N, out_channels]
+        out_flat = torch.bmm(adj_batched, x_proj)
         out_flat = self.activation(out_flat)
         
         # 4. 恢复为四维张量
         # Shape 变为: [B, T, N, d_gcn]
-        out = rearrange(out_flat, '(b t) n d -> b t n d', b=B, t=T)
+        out = out_flat.view(B, T, N, -1)
         
         return out
 
@@ -160,10 +143,8 @@ class GlobalTransformer(nn.Module):
         """
         B, T, N, d_gcn = x.shape
         
-        # --- Shape Transition ---
-        # 1. 展平空间维度 (将所有节点的特征拼接到一起)
-        # Shape 变为: [B, T, N * d_gcn]
-        x_flat = rearrange(x, 'b t n d -> b t (n d)')
+        # Shape: [B, T, N, d_gcn] -> [B, T, N*d_gcn]
+        x_flat = x.contiguous().view(B, T, N * d_gcn)
         
         # 2. 线性投影到 d_model
         # Shape 变为: [B, T, d_model]

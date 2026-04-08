@@ -85,13 +85,13 @@ def main():
     print("=== 初始化 ST-GNN 真实数据训练流程 ===")
     
     # 1. 准备数据
-    data_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct6/processed_data/train"
+    data_dir = "/root/autodl-tmp/processed_data/train"
     dataset = PHMRealDataset(data_dir, window_size=50, stride=5)
     # 使用 DataLoader 批量加载数据，启用 shuffle 打乱时序防止过拟合
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=0)
     
     # 2. 设备与模型初始化
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"训练加速设备: {device}")
     
     # 实例化我们的多任务模型
@@ -147,7 +147,7 @@ def main():
         print(f"==> Epoch {epoch+1} 结束 | 平均 Loss: {avg_loss:.4f} (Cls: {avg_cls_loss:.4f}, Reg: {avg_reg_loss:.4f})\n")
         
     # 3. 固化模型并保存权重
-    save_path = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct6/phm_stgnn_model_weights.pth"
+    save_path = "/root/autodl-tmp/graduation-project/phm_stgnn_model_weights.pth"
     torch.save(model.state_dict(), save_path)
     print(f"🎉 训练大循环圆满完成！模型已固化并成功保存至:\n {save_path}")
 

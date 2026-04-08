@@ -324,9 +324,9 @@ def process_dataset(raw_dir: str, output_dir: str, is_train: bool = True, normal
     return None, None
 
 if __name__ == "__main__":
-    train_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/PHM 2012/data/raw/train"
-    test_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/PHM 2012/data/raw/test"
-    output_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct6/processed_data"
+    train_dir = "/root/autodl-tmp/PHM 2012/PHM 2012/data/raw/train"
+    test_dir = "/root/autodl-tmp/PHM 2012/PHM 2012/data/raw/test"
+    output_dir = "/root/autodl-tmp/processed_data"
     
     os.makedirs(output_dir, exist_ok=True)
     

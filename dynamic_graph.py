@@ -131,7 +131,7 @@ def test_dynamic_graph_with_data():
     print(f"边索引数据类型: {edge_index.dtype}")
     
     # 6. 读取真实数据验证维度逻辑
-    data_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct6/processed_data/train"
+    data_dir = "/root/autodl-tmp/processed_data/train"
     if os.path.exists(data_dir):
         csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
         if csv_files:

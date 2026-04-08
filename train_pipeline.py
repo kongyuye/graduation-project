@@ -84,8 +84,8 @@ class PHM_STGNN_Model(nn.Module):
         h_gcn = self.st_backbone.spatial_gat(h_cnn, adj) # [B, T, N, d_gcn]
         
         # 3. 展平并映射到 Transformer 维度
-        from einops import rearrange
-        h_flat = rearrange(h_gcn, 'b t n d -> b t (n d)')
+        B, T, N, D = h_gcn.shape
+        h_flat = h_gcn.contiguous().view(B, T, N * D)
         h_proj = self.st_backbone.global_transformer.input_projection(h_flat) # [B, T, d_model]
         
         # 4. **注入工况提示向量**
