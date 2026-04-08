@@ -36,9 +36,9 @@ def predict_test_set():
     # ---------------------------------------------------------
     # 2. 实例化模型并加载权重
     # ---------------------------------------------------------
-    model = PHM_STGNN_Model(num_nodes=8, c_in=1, d_model=256, cond_dim=2, num_classes=3).to(device)
+    model = PHM_STGNN_Model(num_nodes=22, c_in=1, d_model=256, cond_dim=2, num_classes=3).to(device)
     
-    model_path = "/root/autodl-tmp/graduation-project/phm_stgnn_model_weights.pth"
+    model_path = "/root/autodl-tmp/graduation-project/phm_stgnn_model_weightsv2.pth"
     if not os.path.exists(model_path):
         print(f"[!] Error: 模型权重文件不存在 {model_path}")
         return
@@ -74,10 +74,22 @@ def predict_test_set():
             print(f"[!] Warning: {bearing_name} 的长度 ({truncated_len}) 小于滑动窗口大小 ({window_size})，跳过。")
             continue
             
-        # 提取图神经网络输入特征 (8个频带的小波包能量比例)
-        node_cols = [f'h_wpt_energy_ratio_{i}' for i in range(8)]
-        x_data = df[node_cols].values # (L, 8)
-        x_data = np.expand_dims(x_data, axis=-1) # (L, 8, 1)
+        # 修改为：包含时域(22个8)，波包能量比例)
+        # 提取图神经网络输入特征 (包含时域、频域、时频域共22个节点特征)
+        node_cols = [
+            # 1. 时域 (5个)
+            'h_rms', 'h_kurtosis', 'h_skewness', 'h_p2p', 'h_shape_factor',
+            # 2. 频域 (9个)
+            'h_spectral_centroid', 
+            'h_fft_band_energy_ratio_0', 'h_fft_band_energy_ratio_1', 'h_fft_band_energy_ratio_2', 'h_fft_band_energy_ratio_3',
+            'h_fft_band_energy_ratio_4', 'h_fft_band_energy_ratio_5', 'h_fft_band_energy_ratio_6', 'h_fft_band_energy_ratio_7',
+            # 3. 时频域 (8个)
+            'h_wpt_energy_ratio_0', 'h_wpt_energy_ratio_1', 'h_wpt_energy_ratio_2', 'h_wpt_energy_ratio_3',
+            'h_wpt_energy_ratio_4', 'h_wpt_energy_ratio_5', 'h_wpt_energy_ratio_6', 'h_wpt_energy_ratio_7'
+        ]
+        
+        x_data = df[node_cols].values # (L, 22)
+        x_data = np.expand_dims(x_data, axis=-1) # (L, 22, 1)
         
         # 提取全局工况提示特征 (RMS 和 温度)
         cond_cols = ['h_rms', 'temperature']

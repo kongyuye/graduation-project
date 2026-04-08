@@ -41,10 +41,20 @@ class PHMRealDataset(Dataset):
             cls_array[rul_array <= 0.2] = 2
             
             # --- 提取输入特征 ---
-            # 我们选取水平振动的 8 个小波包能量比例作为图神经网络的 8 个空间节点 (N=8, C_in=1)
-            node_cols = [f'h_wpt_energy_ratio_{i}' for i in range(8)]
-            x_data = df[node_cols].values # 形状: (L, 8)
-            x_data = np.expand_dims(x_data, axis=-1) # 增加通道维度 -> (L, 8, 1)
+            # --- 修改为：包含时域(5)、频域(9)、时频域(8)，共 22 个特征 ---
+            node_cols = [
+                # 1. 时域 (5个)
+                'h_rms', 'h_kurtosis', 'h_skewness', 'h_p2p', 'h_shape_factor',
+                # 2. 频域 (9个)
+                'h_spectral_centroid', 
+                'h_fft_band_energy_ratio_0', 'h_fft_band_energy_ratio_1', 'h_fft_band_energy_ratio_2', 'h_fft_band_energy_ratio_3',
+                'h_fft_band_energy_ratio_4', 'h_fft_band_energy_ratio_5', 'h_fft_band_energy_ratio_6', 'h_fft_band_energy_ratio_7',
+                # 3. 时频域 (8个)
+                'h_wpt_energy_ratio_0', 'h_wpt_energy_ratio_1', 'h_wpt_energy_ratio_2', 'h_wpt_energy_ratio_3',
+                'h_wpt_energy_ratio_4', 'h_wpt_energy_ratio_5', 'h_wpt_energy_ratio_6', 'h_wpt_energy_ratio_7'
+            ]
+            x_data = df[node_cols].values # 形状: (L, 22)
+            x_data = np.expand_dims(x_data, axis=-1) # 增加通道维度 -> (L, 22, 1)
             
             # 我们选取 RMS 和 温度 作为设备的外部全局工况提示 (cond_dim=2)
             cond_cols = ['h_rms', 'temperature']
@@ -95,7 +105,7 @@ def main():
     print(f"训练加速设备: {device}")
     
     # 实例化我们的多任务模型
-    model = PHM_STGNN_Model(num_nodes=8, c_in=1, d_model=256, cond_dim=2, num_classes=3).to(device)
+    model = PHM_STGNN_Model(num_nodes=22, c_in=1, d_model=256, cond_dim=2, num_classes=3).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
     
     # 定义损失函数
@@ -147,7 +157,7 @@ def main():
         print(f"==> Epoch {epoch+1} 结束 | 平均 Loss: {avg_loss:.4f} (Cls: {avg_cls_loss:.4f}, Reg: {avg_reg_loss:.4f})\n")
         
     # 3. 固化模型并保存权重
-    save_path = "/root/autodl-tmp/graduation-project/phm_stgnn_model_weights.pth"
+    save_path = "/root/autodl-tmp/graduation-project/phm_stgnn_model_weightsv2.pth"
     torch.save(model.state_dict(), save_path)
     print(f"🎉 训练大循环圆满完成！模型已固化并成功保存至:\n {save_path}")
 
