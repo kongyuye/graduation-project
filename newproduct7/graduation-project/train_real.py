@@ -134,14 +134,18 @@ def main():
     
     # 实例化我们的多任务模型
     model = PHM_STGNN_Model(num_nodes=42, c_in=1, d_model=256, cond_dim=2, num_classes=3).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+    
+    # === 优化点 1: 引入权重衰减 (L2 正则化) ===
+    # weight_decay=1e-4 会在损失函数中增加一个与参数平方成正比的惩罚项
+    # 这迫使模型权重分布得更均匀，防止过度依赖少数个别特征，提升泛化能力
+    optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, weight_decay=1e-4)
     
     # 定义损失函数
     criterion_cls = nn.CrossEntropyLoss()
     criterion_reg = nn.MSELoss()
     
-    num_epochs = 100
-    alpha = 0.5  # 分类与回归损失的联合优化权重
+    num_epochs = 80
+    alpha = 0.1  # 分类与回归损失的联合优化权重
     
     # === 添加学习率调度器：Warmup (前20%) + 余弦退火 (Cosine Annealing) ===
     warmup_epochs = int(num_epochs * 0.2)
@@ -172,6 +176,14 @@ def main():
             x, cond = x.to(device), cond.to(device)
             y_cls = y_cls.to(device)
             y_rul = y_rul.to(device).unsqueeze(-1) # 形状对齐为 (B, 1)
+            
+            # === 优化点 2: 引入噪声注入 (Noise Injection) ===
+            # 在训练阶段，向输入特征 x 加入微小的高斯噪声
+            # 相当于给模型带上“毛玻璃”，防止其死记硬背训练集的精确数值，迫使其学习宏观退化趋势
+            if model.training:
+                noise_std = 0.01  # 噪声标准差，可根据特征数值范围调整
+                noise = torch.randn_like(x) * noise_std
+                x = x + noise
             
             optimizer.zero_grad()
             
