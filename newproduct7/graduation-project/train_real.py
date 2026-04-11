@@ -8,6 +8,9 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim.lr_scheduler import LambdaLR
 import matplotlib.pyplot as plt
 
+# 引入全局路径配置
+import config
+
 # 引入已有的核心模型模块
 from train_pipeline import PHM_STGNN_Model
 
@@ -122,8 +125,8 @@ class PHMRealDataset(Dataset):
 def main():
     print("=== 初始化 ST-GNN 真实数据训练流程 ===")
     
-    # 1. 准备数据
-    data_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/processed_data/train"
+    # 1. 准备数据 (使用全局配置路径)
+    data_dir = config.TRAIN_DATA_DIR
     dataset = PHMRealDataset(data_dir, window_size=50, stride=5)
     # 使用 DataLoader 批量加载数据，启用 shuffle 打乱时序防止过拟合
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=0)
@@ -226,8 +229,8 @@ def main():
         
         print(f"==> Epoch {epoch+1} 结束 | LR: {current_lr:.6f} | 平均 Loss: {avg_loss:.4f} (Cls: {avg_cls_loss:.4f}, Reg: {avg_reg_loss:.4f})\n")
         
-    # 3. 固化模型并保存权重
-    save_path = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/phm_stgnn_model_weights.pth"
+    # 3. 固化模型并保存权重 (使用全局配置路径)
+    save_path = config.MODEL_WEIGHTS_PATH
     torch.save(model.state_dict(), save_path)
     print(f"🎉 训练大循环圆满完成！模型已固化并成功保存至:\n {save_path}")
     
@@ -246,8 +249,8 @@ def main():
     plt.legend()
     plt.grid(True, linestyle=':', alpha=0.6)
     
-    # 保存图片
-    plot_save_path = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/graduation-project/loss_curve.png"
+    # 保存图片 (使用全局配置路径)
+    plot_save_path = config.LOSS_CURVE_PATH
     plt.savefig(plot_save_path, dpi=300, bbox_inches='tight')
     print(f"📈 Loss 曲线已保存至: {plot_save_path}")
     

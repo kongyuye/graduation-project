@@ -4,9 +4,10 @@ import pandas as pd
 import numpy as np
 import torch
 import sys
+import config
 
 # 将包含模型的目录加入环境变量
-sys.path.append("/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/graduation-project")
+sys.path.append(config.PROJECT_DIR)
 from train_pipeline import PHM_STGNN_Model
 
 # =========================================================
@@ -28,7 +29,7 @@ def main():
     # 参数需与 train_real.py 保持完全一致：42个节点(时域、频域和WPT特征)，工况维度2
     model = PHM_STGNN_Model(num_nodes=42, c_in=1, d_model=256, cond_dim=2, num_classes=3).to(device)
     
-    model_path = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/phm_stgnn_model_weights.pth"
+    model_path = config.MODEL_WEIGHTS_PATH
     if not os.path.exists(model_path):
         print(f"[!] 找不到模型权重文件: {model_path}\n请先运行 train_real.py 完成训练。")
         return
@@ -41,7 +42,7 @@ def main():
     # ---------------------------------------------------------
     # 2. 读取并预处理训练集特征数据
     # ---------------------------------------------------------
-    train_data_dir = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/processed_data/train"
+    train_data_dir = config.TRAIN_DATA_DIR
     csv_files = glob.glob(os.path.join(train_data_dir, "*_train_features.csv"))
     print(f"[*] 找到 {len(csv_files)} 个训练集特征文件。")
     
@@ -143,7 +144,7 @@ def main():
     # ---------------------------------------------------------
     if results:
         res_df = pd.DataFrame(results)
-        out_path = "/Users/wanglixiao/Desktop/大学/大四上/毕设/newproduct7/predict_results.csv"
+        out_path = config.PREDICT_RESULTS_PATH
         res_df.to_csv(out_path, index=False)
         print("-" * 100)
         print(f"[*] 所有测试集预测结果已成功保存至: {out_path}")
